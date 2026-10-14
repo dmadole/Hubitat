@@ -46,7 +46,7 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.1.0"
+@Field static final String VERSION = "1.1.1"
 @Field static final Map deviceModelNames = ["3501:0001":"DZPD3", "3201:0001":"DZ6HD", "0041:0002":"ZW6HD"]
 
 metadata {
@@ -364,7 +364,7 @@ String setParameter(paramNum, value, size = null) {
  ***** Z-Wave Reports
 ********************************************************************/
 void parse(String description) {
-    	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+    hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
 	
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
@@ -927,8 +927,11 @@ List convertIntListToHexList(intList, pad=2) {
 Integer convertLevel(level, userLevel=false) {
 	if (levelCorrection) {
 	    // The ZW6HD does internal conversion to a 1..99 range (but we still convert to 1..100)
-        Integer brightmin = (state.deviceModel == "ZW6HD") ? 1 : getParamValue("minimumBrightness")
-        Integer brightmax = (state.deviceModel == "ZW6HD") ? 99 : getParamValue("maximumBrightness")
+		// The DZ6HD treats minimum 0 and maximum 100 as minimum 1 and maximum 99, respectively 
+		Integer brightmin = (state.deviceModel == "ZW6HD") ?
+		    1 : Math.max(1, getParamValue("minimumBrightness"))
+        Integer brightmax = (state.deviceModel == "ZW6HD") ?
+		    99 : Math.min(99, getParamValue("maximumBrightness"))
 	
 		if (userLevel) {
 			//This converts what the user selected into a physical level within the min/max range

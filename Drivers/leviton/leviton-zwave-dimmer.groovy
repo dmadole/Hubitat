@@ -2,6 +2,7 @@
  *  Leviton Z-Wave Plus Dimmer
  *    - Model: DZPD3 Z-Wave+ Plug-In Dimmer
  *    - Model: DZ6HD Z-Wave+ In Wall Dimmer
+ *    - Model: ZW6HD Z-Wave+ In Wall Dimmer
  *
  *  For Support, Information and Updates:
  *  https://community.hubitat.com/t/leviton-dimmers/114333

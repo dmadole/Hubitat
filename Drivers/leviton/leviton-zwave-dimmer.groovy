@@ -10,6 +10,14 @@
 
 Changelog:
 
+## [1.1.1] - 2026-10-14 (@dmadole)
+  - Adjusted brightness scaling to use 1–100 logical range (versus 0-100)
+  - Ignore 0xFF (restore previous level) when processing brightness reports
+  - Fixed 99-to-100 level conversion when brightness correction is enabled
+  
+## [1.1.0] - 2026-10-13 (@dmadole)
+  - Added support for ZW6HD
+  
 ## [1.0.1] - 2023-04-16 (@jtp10181)
   - Fixed startLevelChange not working when duration left blank
 
@@ -38,8 +46,8 @@ Changelog:
 
 import groovy.transform.Field
 
-@Field static final String VERSION = "1.0.0"
-@Field static final Map deviceModelNames = ["3501:0001":"DZPD3", "3201:0001":"DZ6HD"]
+@Field static final String VERSION = "1.1.0"
+@Field static final Map deviceModelNames = ["3501:0001":"DZPD3", "3201:0001":"DZ6HD", "0041:0002":"ZW6HD"]
 
 metadata {
 	definition (
@@ -72,6 +80,7 @@ metadata {
 
 		fingerprint mfr:"001D", prod:"3501", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x70,0x5A,0x73,0x26,0x20,0x27,0x2C,0x2B,0x7A", outClusters:"0x82", deviceJoinName:"Leviton DZPD3 Plug Dimmer"
 		fingerprint mfr:"001D", prod:"3201", deviceId:"0001", inClusters:"0x5E,0x85,0x59,0x86,0x72,0x70,0x5A,0x73,0x26,0x20,0x27,0x2C,0x2B,0x7A", outClusters:"0x82", deviceJoinName:"Leviton DZ6HD Dimmer"
+		fingerprint mfr:"001D", prod:"0041", deviceId:"0002", inClusters:"0x5E,0x26,0x85,0x8E,0x59,0x55,0x86,0x72,0x5A,0x87,0x73,0x9F,0x6C,0x70,0x2B,0x2C,0x7A", outClusters:"0x82", deviceJoinName:"Leviton ZW6HD Dimmer"
 	}
 
 	preferences {
@@ -125,49 +134,67 @@ void debugShowVars() {
 //Main Parameters Listing
 @Field static Map<String, Map> paramsMap =
 [
-	fadeOn: [ num: 1,
-		title: "Fade On Time (seconds)",
-		size: 1, defaultVal: 2,
-		range: "0..127"
-	],
+    fadeOn: [ num: 1,
+        title: "Fade On Time (seconds)",
+        size: 1, defaultVal: 2,
+        range: "0..127",
+        changes: ['ZW6HD':[size: 4]]
+    ],
 	fadeOff: [ num: 2,
 		title: "Fade Off Time (seconds)",
 		size: 1, defaultVal: 2,
-		range: "0..127"
+		range: "0..127",
+        changes: ['ZW6HD':[size: 4]]
 	],
 	minimumBrightness: [ num: 3,
 		title: "Minimum Brightness (level)",
 		size: 1, defaultVal: 10,
-		range: "0..100"
+		range: "0..100",
+        changes: ['ZW6HD':[size: 4, defaultVal: 20, range: "0..99"]]
 	],
 	maximumBrightness: [ num: 4,
 		title: "Maximum Brightness (level)",
 		size: 1, defaultVal: 100,
-		range: "0..100"
+		range: "0..100",
+        changes: ['ZW6HD':[size: 4, defaultVal: 99, range: "0..99"]]
 	],
 	presetLevel: [ num: 5,
 		title: "Preset Light Level",
 		description: "0 = Restore last level when turned on",
 		size: 1, defaultVal: 0,
 		range: "0..100",
-		changes: ['DZPD3':[num:null]]
+		changes: [
+            'DZPD3':[num: null],
+            'ZW6HD':[size: 4, range: "0..99"]]
 	],
 	ledTimeout: [ num: 6,
 		title: "LED Dim Indicator Timeout (seconds)",
 		description: "0 = Off / 255 = Always On",
 		size: 1, defaultVal: 3,
 		range: "0..255",
-		changes: ['DZPD3':[num:null]]
+		changes: [
+            'DZPD3':[num: null],
+            'ZW6HD':[size: 4]]
 	],
 	ledMode: [ num: 7,
 		title: "LED Indicator",
 		size: 1, defaultVal: 255,
-		options: [255:"LED On When Switched Off", 254:"LED On When Switched On", 0:"LED Always Off"]
+		options: [255:"LED On When Switched Off", 254:"LED On When Switched On", 0:"LED Always Off"],
+        changes: ['ZW6HD':[size: 4]]
 	],
 	loadType: [ num: 8,
 		title: "Load Type",
 		size: 1, defaultVal: 0,
-		options: [0:"Incandescent", 1:"LED", 2:"CFL"]
+		options: [0:"Incandescent", 1:"LED", 2:"CFL"],
+        changes: ['ZW6HD':[size: 4, defaultVal: 1, options: [0:"Incandescent", 1:"LED", 2:"CFL", 3:"MLV"]]]
+	],
+	controlTiming: [ num: 9,
+		title: "Control Timing",
+		size: 4, defaultVal: 0,
+		options: [0:"Normal", 1:"Medium", 2:"Extended"],
+        changes: [
+		    'DZ6HD':[num: null],
+		    'DZPD3':[num: null]]
 	]
 ]
 
@@ -337,8 +364,8 @@ String setParameter(paramNum, value, size = null) {
  ***** Z-Wave Reports
 ********************************************************************/
 void parse(String description) {
-	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
-
+    	hubitat.zwave.Command cmd = zwave.parse(description, commandClassVersions)
+	
 	if (cmd) {
 		logTrace "parse: ${description} --PARSED-- ${cmd}"
 		zwaveEvent(cmd)
@@ -669,9 +696,10 @@ void sendSwitchEvents(rawVal, String type, Integer ep=0) {
 	String desc = "switch is turned ${value}" + (type ? " (${type})" : "")
 	sendEventLog(name:"switch", value:value, type:type, desc:desc, ep)
 
-	if (rawVal) {
-		Integer level = (rawVal == 99 ? 100 : rawVal)
-		level = convertLevel(level, false)
+    if (rawVal && rawVal != 0xFF) {
+        Integer level = levelCorrection ?
+            convertLevel(rawVal, false) :
+            convertLevel(rawVal == 99 ? 100 : rawVal, false)
 
 		desc = "level is set to ${level}%"
 		if (type) desc += " (${type})"
@@ -898,14 +926,13 @@ List convertIntListToHexList(intList, pad=2) {
 
 Integer convertLevel(level, userLevel=false) {
 	if (levelCorrection) {
-		Integer brightmax = getParamValue("maximumBrightness")
-		Integer brightmin = getParamValue("minimumBrightness")
-		brightmax = (brightmax == 99) ? 100 : brightmax
-		brightmin = (brightmin == 1) ? 0 : brightmin
-
+	    // The ZW6HD does internal conversion to a 1..99 range (but we still convert to 1..100)
+        Integer brightmin = (state.deviceModel == "ZW6HD") ? 1 : getParamValue("minimumBrightness")
+        Integer brightmax = (state.deviceModel == "ZW6HD") ? 99 : getParamValue("maximumBrightness")
+	
 		if (userLevel) {
 			//This converts what the user selected into a physical level within the min/max range
-			level = ((brightmax-brightmin) * (level/100)) + brightmin
+			level = ((brightmax-brightmin) * ((level - 1)/99)) + brightmin
 			state.levelActual = level
 			level = validateRange(Math.round(level), brightmax, brightmin, brightmax)
 		}
@@ -914,7 +941,8 @@ Integer convertLevel(level, userLevel=false) {
 			if (Math.round(state.levelActual ?: 0) == level) level = state.levelActual
 			else state.levelActual = level
 
-			level = ((level - brightmin) / (brightmax - brightmin)) * 100
+            level = (brightmax == brightmin) ? 100 :
+			    ((level - brightmin) / (brightmax - brightmin)) * 99 + 1
 			level = validateRange(Math.round(level), 100, 1, 100)
 		}
 	}
